@@ -25,8 +25,23 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-from tensorflow.models.rnn.translate import data_utils
+import data_utils
 
+def variable_summaries(var, groupname, name):
+    """Attach a lot of summaries to a Tensor.
+        This is also quite expensive.
+    """
+    with tf.name_scope(None):
+        s_var = tf.cast(var, tf.float32)
+        amean = tf.reduce_mean(tf.abs(s_var))
+        tf.summary.scalar(groupname + '/amean/' + name, amean)
+        mean = tf.reduce_mean(s_var)
+        tf.summary.scalar(groupname + '/mean/' + name, mean)
+        stddev = tf.sqrt(tf.reduce_sum(tf.square(s_var - mean)))
+        tf.summary.scalar(groupname + '/sttdev/' + name, stddev)
+        tf.summary.scalar(groupname + '/max/' + name, tf.reduce_max(s_var))
+        tf.summary.scalar(groupname + '/min/' + name, tf.reduce_min(s_var))
+        tf.histogram_summary(groupname + "/" + name, var)
 
 class Seq2SeqModel(object):
   """Sequence-to-sequence model with attention and for multiple buckets.
@@ -178,6 +193,8 @@ class Seq2SeqModel(object):
 
     # Gradients and SGD update operation for training the model.
     params = tf.trainable_variables()
+    for v in params:
+      variable_summaries(v,"weights",v.name)
     if not forward_only:
       self.gradient_norms = []
       self.updates = []
@@ -186,6 +203,9 @@ class Seq2SeqModel(object):
         gradients = tf.gradients(self.losses[b], params)
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
+        for cg in clipped_gradients:
+          variable_summaries(cg, "clipped_grads", cg.name)
+                                                         
         self.gradient_norms.append(norm)
         self.updates.append(opt.apply_gradients(
             zip(clipped_gradients, params), global_step=self.global_step))

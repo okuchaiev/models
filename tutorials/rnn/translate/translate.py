@@ -42,8 +42,8 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-from tensorflow.models.rnn.translate import data_utils
-from tensorflow.models.rnn.translate import seq2seq_model
+import data_utils
+import seq2seq_model
 
 
 tf.app.flags.DEFINE_float("learning_rate", 0.5, "Learning rate.")
@@ -130,6 +130,16 @@ def create_model(session, forward_only):
       FLAGS.learning_rate_decay_factor,
       forward_only=forward_only,
       dtype=dtype)
+  #Summaries
+  model.summary_writer = tf.train.SummaryWriter(logdir=FLAGS.train_dir, graph=tf.get_default_graph())
+  model.train_perplexity_update = tf.placeholder(dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), shape=[])
+  train_perplexity = tf.Variable(float("inf"), dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), trainable=False, name='Step_Train_Perplexity', validate_shape=False)
+  tf.scalar_summary("Step Train Perplexity", train_perplexity)
+  model.train_perplexity_update_op = tf.assign(train_perplexity, model.train_perplexity_update)
+
+  tf.scalar_summary("Learning Rate", model.learning_rate)
+  model.summary = tf.summary.merge_all()
+  #end of Summaries
   ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
   if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
     print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
@@ -147,10 +157,17 @@ def train():
   en_train, fr_train, en_dev, fr_dev, _, _ = data_utils.prepare_wmt_data(
       FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size)
 
+  start_time_train = time.time()
+
   with tf.Session() as sess:
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
+    print("Data type is FP16: %s" % FLAGS.use_fp16)
+    print("Use LSTM: %s " % FLAGS.use_lstm)
+    print("Optimizer: %s" % FLAGS.optimizer)
     model = create_model(sess, False)
+    
+    
 
     # Read data into buckets and compute their sizes.
     print ("Reading development and training data (limit: %d)."
@@ -191,9 +208,13 @@ def train():
       if current_step % FLAGS.steps_per_checkpoint == 0:
         # Print statistics for the previous epoch.
         perplexity = math.exp(float(loss)) if loss < 300 else float("inf")
+        sess.run(model.train_perplexity_update_op, feed_dict={model.train_perplexity_update: perplexity})
+        i = model.global_step.eval()
+        lr = model.learning_rate.eval()
         print ("global step %d learning rate %.4f step-time %.2f perplexity "
-               "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
+               "%.2f" % (i, lr,
                          step_time, perplexity))
+        model.summary_writer.add_summary(sess.run(model.summary), i)
         # Decrease learning rate if no improvement was seen over last 3 times.
         if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
           sess.run(model.learning_rate_decay_op)
@@ -215,6 +236,8 @@ def train():
               "inf")
           print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
         sys.stdout.flush()
+  end_time_train = time.time()
+  print("Train Raw time: %.3f seconds" % (end_time_train - start_time_train))
 
 
 def decode():
