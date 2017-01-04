@@ -57,11 +57,11 @@ from __future__ import division
 from __future__ import print_function
 
 import time
-
+import sys
+sys.stdout=sys.stderr
 import numpy as np
 import tensorflow as tf
-
-from tensorflow.models.rnn.ptb import reader
+import reader
 
 flags = tf.flags
 logging = tf.logging

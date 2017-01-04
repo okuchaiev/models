@@ -28,6 +28,24 @@ from six.moves import urllib
 from tensorflow.python.platform import gfile
 import tensorflow as tf
 
+
+def variable_summaries(var, groupname, name):
+    """Attach a lot of summaries to a Tensor.
+        This is also quite expensive.
+    """
+    with tf.name_scope(None):
+        s_var = tf.cast(var, tf.float32)
+        amean = tf.reduce_mean(tf.abs(s_var))
+        tf.summary.scalar(groupname + '/amean/' + name, amean)
+        mean = tf.reduce_mean(s_var)
+        tf.summary.scalar(groupname + '/mean/' + name, mean)
+        stddev = tf.sqrt(tf.reduce_sum(tf.square(s_var - mean)))
+        tf.summary.scalar(groupname + '/sttdev/' + name, stddev)
+        tf.summary.scalar(groupname + '/max/' + name, tf.reduce_max(s_var))
+        tf.summary.scalar(groupname + '/min/' + name, tf.reduce_min(s_var))
+        tf.summary.histogram(groupname + "/" + name, var)
+
+
 # Special vocabulary symbols - we always put them at the start.
 _PAD = b"_PAD"
 _GO = b"_GO"

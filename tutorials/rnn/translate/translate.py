@@ -43,6 +43,7 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 import data_utils
+from data_utils import variable_summaries
 import seq2seq_model
 
 
@@ -59,7 +60,8 @@ tf.app.flags.DEFINE_integer("en_vocab_size", 40000, "English vocabulary size.")
 tf.app.flags.DEFINE_integer("fr_vocab_size", 40000, "French vocabulary size.")
 tf.app.flags.DEFINE_string("data_dir", "/tmp", "Data directory")
 tf.app.flags.DEFINE_string("train_dir", "/tmp", "Training directory.")
-tf.app.flags.DEFINE_integer("max_train_data_size", 0,
+tf.app.flags.DEFINE_integer("max_train_data_size", 0,        
+  
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
                             "How many training steps to do per checkpoint.")
@@ -67,6 +69,8 @@ tf.app.flags.DEFINE_boolean("decode", False,
                             "Set to True for interactive decoding.")
 tf.app.flags.DEFINE_boolean("self_test", False,
                             "Run a self-test if this is set to True.")
+tf.app.flags.DEFINE_boolean("use_lstm", True,
+                            "Use LSTM cells instead of GPU")
 tf.app.flags.DEFINE_boolean("use_fp16", False,
                             "Train using fp16 instead of fp32.")
 
@@ -75,7 +79,6 @@ FLAGS = tf.app.flags.FLAGS
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
 _buckets = [(5, 10), (10, 15), (20, 25), (40, 50)]
-
 
 def read_data(source_path, target_path, max_size=None):
   """Read data from source and target files and put into buckets.
@@ -110,7 +113,8 @@ def read_data(source_path, target_path, max_size=None):
         for bucket_id, (source_size, target_size) in enumerate(_buckets):
           if len(source_ids) < source_size and len(target_ids) < target_size:
             data_set[bucket_id].append([source_ids, target_ids])
-            break
+            break        
+  
         source, target = source_file.readline(), target_file.readline()
   return data_set
 
@@ -128,18 +132,22 @@ def create_model(session, forward_only):
       FLAGS.batch_size,
       FLAGS.learning_rate,
       FLAGS.learning_rate_decay_factor,
+      use_lstm=FLAGS.use_lstm,
       forward_only=forward_only,
       dtype=dtype)
+ 
   #Summaries
-  model.summary_writer = tf.train.SummaryWriter(logdir=FLAGS.train_dir, graph=tf.get_default_graph())
+  model.summary_writer = tf.summary.FileWriter(logdir=FLAGS.train_dir, graph=tf.get_default_graph())
   model.train_perplexity_update = tf.placeholder(dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), shape=[])
   train_perplexity = tf.Variable(float("inf"), dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), trainable=False, name='Step_Train_Perplexity', validate_shape=False)
-  tf.scalar_summary("Step Train Perplexity", train_perplexity)
+  tf.summary.scalar("Step Train Perplexity", train_perplexity)
   model.train_perplexity_update_op = tf.assign(train_perplexity, model.train_perplexity_update)
 
-  tf.scalar_summary("Learning Rate", model.learning_rate)
-  model.summary = tf.summary.merge_all()
+  tf.summary.scalar("Learning Rate", model.learning_rate)
+
   #end of Summaries
+
+
   ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
   if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
     print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
@@ -157,17 +165,10 @@ def train():
   en_train, fr_train, en_dev, fr_dev, _, _ = data_utils.prepare_wmt_data(
       FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size)
 
-  start_time_train = time.time()
-
   with tf.Session() as sess:
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
-    print("Data type is FP16: %s" % FLAGS.use_fp16)
-    print("Use LSTM: %s " % FLAGS.use_lstm)
-    print("Optimizer: %s" % FLAGS.optimizer)
     model = create_model(sess, False)
-    
-    
 
     # Read data into buckets and compute their sizes.
     print ("Reading development and training data (limit: %d)."
@@ -198,7 +199,12 @@ def train():
       start_time = time.time()
       encoder_inputs, decoder_inputs, target_weights = model.get_batch(
           train_set, bucket_id)
-      _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
+      if current_step % FLAGS.steps_per_checkpoint == 0:
+        _, step_loss, esummary = model.step(sess, encoder_inputs, decoder_inputs,
+                                   target_weights, bucket_id, False, True)
+        model.summary_writer.add_summary(esummary, model.global_step.eval())                                    
+      else:
+        _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                    target_weights, bucket_id, False)
       step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
       loss += step_loss / FLAGS.steps_per_checkpoint
@@ -212,9 +218,9 @@ def train():
         i = model.global_step.eval()
         lr = model.learning_rate.eval()
         print ("global step %d learning rate %.4f step-time %.2f perplexity "
-               "%.2f" % (i, lr,
-                         step_time, perplexity))
-        model.summary_writer.add_summary(sess.run(model.summary), i)
+               "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
+                         step_time, perplexity))                         
+        #model.summary_writer.add_summary(sess.run(model.summary), i)                         
         # Decrease learning rate if no improvement was seen over last 3 times.
         if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
           sess.run(model.learning_rate_decay_op)
@@ -236,8 +242,6 @@ def train():
               "inf")
           print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
         sys.stdout.flush()
-  end_time_train = time.time()
-  print("Train Raw time: %.3f seconds" % (end_time_train - start_time_train))
 
 
 def decode():

@@ -24,24 +24,8 @@ import random
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
-
 import data_utils
-
-def variable_summaries(var, groupname, name):
-    """Attach a lot of summaries to a Tensor.
-        This is also quite expensive.
-    """
-    with tf.name_scope(None):
-        s_var = tf.cast(var, tf.float32)
-        amean = tf.reduce_mean(tf.abs(s_var))
-        tf.summary.scalar(groupname + '/amean/' + name, amean)
-        mean = tf.reduce_mean(s_var)
-        tf.summary.scalar(groupname + '/mean/' + name, mean)
-        stddev = tf.sqrt(tf.reduce_sum(tf.square(s_var - mean)))
-        tf.summary.scalar(groupname + '/sttdev/' + name, stddev)
-        tf.summary.scalar(groupname + '/max/' + name, tf.reduce_max(s_var))
-        tf.summary.scalar(groupname + '/min/' + name, tf.reduce_min(s_var))
-        tf.histogram_summary(groupname + "/" + name, var)
+from data_utils import variable_summaries
 
 class Seq2SeqModel(object):
   """Sequence-to-sequence model with attention and for multiple buckets.
@@ -136,6 +120,7 @@ class Seq2SeqModel(object):
     # Create the internal multi-layer cell for our RNN.
     single_cell = tf.contrib.rnn.GRUCell(size)
     if use_lstm:
+      print('Using LSTM cell')
       single_cell = tf.contrib.rnn.BasicLSTMCell(size)
     cell = single_cell
     if num_layers > 1:
@@ -193,8 +178,10 @@ class Seq2SeqModel(object):
 
     # Gradients and SGD update operation for training the model.
     params = tf.trainable_variables()
-    for v in params:
-      variable_summaries(v,"weights",v.name)
+    self.weights = params
+    for v in self.weights:
+      variable_summaries(v, "weights", v.name) 
+
     if not forward_only:
       self.gradient_norms = []
       self.updates = []
@@ -203,17 +190,20 @@ class Seq2SeqModel(object):
         gradients = tf.gradients(self.losses[b], params)
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
-        for cg in clipped_gradients:
-          variable_summaries(cg, "clipped_grads", cg.name)
-                                                         
+        self.c_grads = clipped_gradients
+        for cg in self.c_grads:
+          if cg is not None and isinstance(cg, tf.Tensor):
+            variable_summaries(cg, "clipped_grads", cg.name)
         self.gradient_norms.append(norm)
         self.updates.append(opt.apply_gradients(
             zip(clipped_gradients, params), global_step=self.global_step))
 
+    self.summaries = tf.summary.merge_all()
     self.saver = tf.train.Saver(tf.global_variables())
+    #self.summary = tf.summary.merge_all()
 
   def step(self, session, encoder_inputs, decoder_inputs, target_weights,
-           bucket_id, forward_only):
+           bucket_id, forward_only, do_summaries=False):
     """Run a step of the model feeding the given inputs.
 
     Args:
@@ -255,12 +245,18 @@ class Seq2SeqModel(object):
     # Since our targets are decoder inputs shifted by one, we need one more.
     last_target = self.decoder_inputs[decoder_size].name
     input_feed[last_target] = np.zeros([self.batch_size], dtype=np.int32)
-
+    
     # Output feed: depends on whether we do a backward step or not.
     if not forward_only:
-      output_feed = [self.updates[bucket_id],  # Update Op that does SGD.
-                     self.gradient_norms[bucket_id],  # Gradient norm.
-                     self.losses[bucket_id]]  # Loss for this batch.
+     output_feed = [self.updates[bucket_id],  # Update Op that does SGD.
+                       self.gradient_norms[bucket_id],  # Gradient norm.
+                       self.losses[bucket_id]]  # Loss for this batch.
+     if do_summaries:
+       output_feed  = [self.updates[bucket_id],  # Update Op that does SGD.
+                       self.gradient_norms[bucket_id],  # Gradient norm.
+                       self.losses[bucket_id],  # Loss for this batch.
+                       self.summaries
+       ]
     else:
       output_feed = [self.losses[bucket_id]]  # Loss for this batch.
       for l in xrange(decoder_size):  # Output logits.
@@ -268,7 +264,10 @@ class Seq2SeqModel(object):
 
     outputs = session.run(output_feed, input_feed)
     if not forward_only:
-      return outputs[1], outputs[2], None  # Gradient norm, loss, no outputs.
+      if do_summaries:
+        return outputs[1], outputs[2], outputs[3] # Gradient norm, loss, no outputs
+      else:
+        return outputs[1], outputs[2], None  # Gradient norm, loss, no outputs
     else:
       return None, outputs[0], outputs[1:]  # No gradient norm, loss, outputs.
 
