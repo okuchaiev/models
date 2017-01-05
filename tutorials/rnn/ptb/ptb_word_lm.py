@@ -126,7 +126,7 @@ class PTBModel(object):
     if is_training and config.keep_prob < 1:
       inputs = tf.nn.dropout(inputs, config.keep_prob)
 
-    # Simplified version of tensorflow.models.rnn.rnn.py's rnn().
+    # Simplified version of models/tutorials/rnn/rnn.py's rnn().
     # This builds an unrolled LSTM for tutorial purposes only.
     # In general, use the rnn() or state_saving_rnn() from rnn.py.
     #
