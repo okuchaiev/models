@@ -34,15 +34,15 @@ def variable_summaries(var, groupname, name):
         This is also quite expensive.
     """
     with tf.name_scope(None):
-        s_var = tf.cast(var, tf.float32)
-        amean = tf.reduce_mean(tf.abs(s_var))
+        #s_var = tf.cast(var, tf.float32)
+        amean = tf.reduce_mean(tf.abs(var))
         tf.summary.scalar(groupname + '/amean/' + name, amean)
-        mean = tf.reduce_mean(s_var)
-        tf.summary.scalar(groupname + '/mean/' + name, mean)
-        stddev = tf.sqrt(tf.reduce_sum(tf.square(s_var - mean)))
-        tf.summary.scalar(groupname + '/sttdev/' + name, stddev)
-        tf.summary.scalar(groupname + '/max/' + name, tf.reduce_max(s_var))
-        tf.summary.scalar(groupname + '/min/' + name, tf.reduce_min(s_var))
+        #mean = tf.reduce_mean(s_var)
+        #tf.summary.scalar(groupname + '/mean/' + name, mean)
+        #stddev = tf.sqrt(tf.reduce_sum(tf.square(s_var - mean)))
+        #tf.summary.scalar(groupname + '/sttdev/' + name, stddev)
+        #tf.summary.scalar(groupname + '/max/' + name, tf.reduce_max(s_var))
+        #tf.summary.scalar(groupname + '/min/' + name, tf.reduce_min(s_var))
         tf.summary.histogram(groupname + "/" + name, var)
 
 

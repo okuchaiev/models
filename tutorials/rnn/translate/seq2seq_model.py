@@ -179,8 +179,6 @@ class Seq2SeqModel(object):
     # Gradients and SGD update operation for training the model.
     params = tf.trainable_variables()
     self.weights = params
-    for v in self.weights:
-      variable_summaries(v, "weights", v.name) 
 
     if not forward_only:
       self.gradient_norms = []
@@ -191,16 +189,20 @@ class Seq2SeqModel(object):
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
         self.c_grads = clipped_gradients
-        for cg in self.c_grads:
-          if cg is not None and isinstance(cg, tf.Tensor):
-            variable_summaries(cg, "clipped_grads", cg.name)
+        
+        if b == 3:
+          for i in xrange(0, len(self.weights)):
+            variable_summaries(self.weights[i], "BUCKET_" + str(b) + "_weights", self.weights[i].name) 
+
+          for i in xrange(0, len(self.c_grads)):            
+              variable_summaries(self.c_grads[i], "BUCKET_" + str(b) + "_clipped_grads", "dLossBy_d"+self.weights[i].name)
+        
         self.gradient_norms.append(norm)
         self.updates.append(opt.apply_gradients(
             zip(clipped_gradients, params), global_step=self.global_step))
-
-    self.summaries = tf.summary.merge_all()
+ 
     self.saver = tf.train.Saver(tf.global_variables())
-    #self.summary = tf.summary.merge_all()
+    self.summaries = tf.summary.merge_all()
 
   def step(self, session, encoder_inputs, decoder_inputs, target_weights,
            bucket_id, forward_only, do_summaries=False):

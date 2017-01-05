@@ -137,14 +137,14 @@ def create_model(session, forward_only):
       dtype=dtype)
  
   #Summaries
-  model.summary_writer = tf.summary.FileWriter(logdir=FLAGS.train_dir, graph=tf.get_default_graph())
-  model.train_perplexity_update = tf.placeholder(dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), shape=[])
-  train_perplexity = tf.Variable(float("inf"), dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), trainable=False, name='Step_Train_Perplexity', validate_shape=False)
-  tf.summary.scalar("Step Train Perplexity", train_perplexity)
-  model.train_perplexity_update_op = tf.assign(train_perplexity, model.train_perplexity_update)
-
-  tf.summary.scalar("Learning Rate", model.learning_rate)
-
+  if not forward_only:
+    #model.summary_writer = tf.summary.FileWriter(logdir=FLAGS.train_dir, graph=tf.get_default_graph())
+    model.summary_writer = tf.summary.FileWriter(logdir=FLAGS.train_dir)
+    model.train_perplexity_update = tf.placeholder(dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), shape=[])
+    train_perplexity = tf.Variable(float("inf"), dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), trainable=False, name='Step_Train_Perplexity', validate_shape=False)
+    model.train_perp_summary = tf.summary.scalar("Step Train Perplexity", train_perplexity)
+    model.train_perplexity_update_op = tf.assign(train_perplexity, model.train_perplexity_update)
+    model.lr_summary = tf.summary.scalar("Learning Rate", model.learning_rate)
   #end of Summaries
 
 
@@ -193,25 +193,22 @@ def train():
       # in [0, 1] and use the corresponding interval in train_buckets_scale.
       random_number_01 = np.random.random_sample()
       bucket_id = min([i for i in xrange(len(train_buckets_scale))
-                       if train_buckets_scale[i] > random_number_01])
-
+                       if train_buckets_scale[i] > random_number_01])      
       # Get a batch and make a step.
       start_time = time.time()
       encoder_inputs, decoder_inputs, target_weights = model.get_batch(
           train_set, bucket_id)
-      if current_step % FLAGS.steps_per_checkpoint == 0:
-        _, step_loss, esummary = model.step(sess, encoder_inputs, decoder_inputs,
-                                   target_weights, bucket_id, False, True)
-        model.summary_writer.add_summary(esummary, model.global_step.eval())                                    
-      else:
+      if current_step % FLAGS.steps_per_checkpoint != 0:
         _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
-                                   target_weights, bucket_id, False)
-      step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
-      loss += step_loss / FLAGS.steps_per_checkpoint
-      current_step += 1
+                                   target_weights, bucket_id, False)        
+      else:
+        print('Bucket Id = %d' % bucket_id)
+        _, step_loss, esummary = model.step(sess, encoder_inputs, decoder_inputs,
+                                   target_weights, bucket_id, False, bucket_id == 3)               
 
-      # Once in a while, we save checkpoint, print statistics, and run evals.
-      if current_step % FLAGS.steps_per_checkpoint == 0:
+        step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
+        loss += step_loss / FLAGS.steps_per_checkpoint
+        # Once in a while, we save checkpoint, print statistics, and run evals.     
         # Print statistics for the previous epoch.
         perplexity = math.exp(float(loss)) if loss < 300 else float("inf")
         sess.run(model.train_perplexity_update_op, feed_dict={model.train_perplexity_update: perplexity})
@@ -219,7 +216,7 @@ def train():
         lr = model.learning_rate.eval()
         print ("global step %d learning rate %.4f step-time %.2f perplexity "
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
-                         step_time, perplexity))                         
+                         step_time, perplexity))                                                  
         #model.summary_writer.add_summary(sess.run(model.summary), i)                         
         # Decrease learning rate if no improvement was seen over last 3 times.
         if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
@@ -228,6 +225,11 @@ def train():
         # Save checkpoint and zero timer and loss.
         checkpoint_path = os.path.join(FLAGS.train_dir, "translate.ckpt")
         model.saver.save(sess, checkpoint_path, global_step=model.global_step)
+        if esummary is not None and bucket_id == 3:
+          print('Adding summary')
+          model.summary_writer.add_summary(esummary, current_step)
+          model.summary_writer.add_summary(model.train_perp_summary.eval(), current_step)
+          model.summary_writer.add_summary(model.lr_summary.eval(), current_step)
         step_time, loss = 0.0, 0.0
         # Run evals on development set and print their perplexity.
         for bucket_id in xrange(len(_buckets)):
@@ -241,8 +243,8 @@ def train():
           eval_ppx = math.exp(float(eval_loss)) if eval_loss < 300 else float(
               "inf")
           print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
-        sys.stdout.flush()
-
+        sys.stdout.flush()         
+      current_step += 1
 
 def decode():
   with tf.Session() as sess:
