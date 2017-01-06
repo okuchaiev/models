@@ -60,8 +60,7 @@ tf.app.flags.DEFINE_integer("en_vocab_size", 40000, "English vocabulary size.")
 tf.app.flags.DEFINE_integer("fr_vocab_size", 40000, "French vocabulary size.")
 tf.app.flags.DEFINE_string("data_dir", "/tmp", "Data directory")
 tf.app.flags.DEFINE_string("train_dir", "/tmp", "Training directory.")
-tf.app.flags.DEFINE_integer("max_train_data_size", 0,        
-  
+tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
                             "How many training steps to do per checkpoint.")
@@ -73,6 +72,10 @@ tf.app.flags.DEFINE_boolean("use_lstm", True,
                             "Use LSTM cells instead of GPU")
 tf.app.flags.DEFINE_boolean("use_fp16", False,
                             "Train using fp16 instead of fp32.")
+tf.app.flags.DEFINE_boolean("use_skip_connection", True,
+                            "Use LSTM skip connections. Only supported if use_lstm=True")
+
+                            
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -134,7 +137,8 @@ def create_model(session, forward_only):
       FLAGS.learning_rate_decay_factor,
       use_lstm=FLAGS.use_lstm,
       forward_only=forward_only,
-      dtype=dtype)
+      dtype=dtype,
+      use_skip_connection=FLAGS.use_skip_connection)
  
   #Summaries
   if not forward_only:

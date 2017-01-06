@@ -27,6 +27,14 @@ import tensorflow as tf
 import data_utils
 from data_utils import variable_summaries
 
+
+class BasicLSTMCellWithSkip(tf.contrib.rnn.BasicLSTMCell):
+  def __call__(self, inputs, state, scope=None):
+    m, new_state = tf.contrib.rnn.BasicLSTMCell.__call__(self, inputs, state, scope)
+    new_state = (tf.contrib.rnn.LSTMStateTuple(new_state[0], tf.scalar_mul(0.5, m) + tf.scalar_mul(0.5, inputs)) if self._state_is_tuple
+                 else array_ops.concat(1, [new_state[0], tf.scalar_mul(0.5, m) + tf.scalar_mul(0.5, inputs)]))
+    return tf.scalar_mul(0.5, m) + tf.scalar_mul(0.5, inputs), new_state
+
 class Seq2SeqModel(object):
   """Sequence-to-sequence model with attention and for multiple buckets.
 
@@ -55,14 +63,15 @@ class Seq2SeqModel(object):
                use_lstm=False,
                num_samples=512,
                forward_only=False,
-               dtype=tf.float32):
+               dtype=tf.float32,
+               use_skip_connection=False):
     """Create the model.
 
     Args:
       source_vocab_size: size of the source vocabulary.
       target_vocab_size: size of the target vocabulary.
       buckets: a list of pairs (I, O), where I specifies maximum input length
-        that will be processed in that bucket, and O specifies maximum output
+        that will be processed in that bucket, anduse_skip_connection O specifies maximum output
         length. Training instances that have inputs longer than I or outputs
         longer than O will be pushed to the next bucket and padded accordingly.
         We assume that the list is sorted, e.g., [(2, 4), (8, 16)].
@@ -78,6 +87,7 @@ class Seq2SeqModel(object):
       num_samples: number of samples for sampled softmax.
       forward_only: if set, we do not construct the backward pass in the model.
       dtype: the data type to use to store internal variables.
+      use_skip_connection: use LSTM cells with skip connections. Currently only for LSTM mode
     """
     self.source_vocab_size = source_vocab_size
     self.target_vocab_size = target_vocab_size
@@ -121,7 +131,15 @@ class Seq2SeqModel(object):
     single_cell = tf.contrib.rnn.GRUCell(size)
     if use_lstm:
       print('Using LSTM cell')
-      single_cell = tf.contrib.rnn.BasicLSTMCell(size)
+      if use_skip_connection:
+        print('Using LSTM with skip connections')
+        single_cell = BasicLSTMCellWithSkip(size)
+      else:        
+        single_cell = tf.contrib.rnn.BasicLSTMCell(size)
+    else:
+      if use_skip_connection:
+        print('Skip connections are only supported for LSTM')
+        exit(-1)
     cell = single_cell
     if num_layers > 1:
       cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
