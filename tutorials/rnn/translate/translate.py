@@ -144,10 +144,25 @@ def create_model(session, forward_only):
   if not forward_only:
     #model.summary_writer = tf.summary.FileWriter(logdir=FLAGS.train_dir, graph=tf.get_default_graph())
     model.summary_writer = tf.summary.FileWriter(logdir=FLAGS.train_dir)
-    model.train_perplexity_update = tf.placeholder(dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), shape=[])
-    train_perplexity = tf.Variable(float("inf"), dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), trainable=False, name='Step_Train_Perplexity', validate_shape=False)
+    
+    #track training perplexity
+    model.train_perplexity_update = tf.placeholder(dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), shape=[])    
+    train_perplexity = tf.Variable(float("inf"), dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), trainable=False, name='Step_Train_Perplexity', validate_shape=False)    
     model.train_perp_summary = tf.summary.scalar("Step Train Perplexity", train_perplexity)
     model.train_perplexity_update_op = tf.assign(train_perplexity, model.train_perplexity_update)
+    
+    #track validation perplexity
+    model.valid_perplexity_update = []
+    model.valid_perp_summary = []
+    valid_perplexity = []
+    model.valid_perplexity_update_op = []
+    for i in xrange(len(_buckets)):
+      model.valid_perplexity_update.append(tf.placeholder(dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), shape=[]))
+      valid_perplexity.append(tf.Variable(float("inf"), dtype=(tf.float16 if FLAGS.use_fp16 else tf.float32), trainable=False, name='Valid_Perplexity_'+str(i), validate_shape=False))
+      model.valid_perp_summary.append(tf.summary.scalar("Bucket %d Validation Perplexity" % i, valid_perplexity[i]))
+      model.valid_perplexity_update_op.append(tf.assign(valid_perplexity[i], model.valid_perplexity_update[i]))
+
+    #track learning rate
     model.lr_summary = tf.summary.scalar("Learning Rate", model.learning_rate)
   #end of Summaries
 
@@ -246,6 +261,8 @@ def train():
                                        target_weights, bucket_id, True)
           eval_ppx = math.exp(float(eval_loss)) if eval_loss < 300 else float(
               "inf")
+          sess.run(model.valid_perplexity_update_op[bucket_id], feed_dict={model.valid_perplexity_update[bucket_id]: eval_ppx})
+          model.summary_writer.add_summary(model.valid_perp_summary[bucket_id].eval(), current_step)
           print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
         sys.stdout.flush()         
       current_step += 1
