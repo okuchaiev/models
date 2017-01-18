@@ -132,7 +132,7 @@ def _generate_image_and_label_batch(image, label, min_queue_examples,
         capacity=min_queue_examples + 3 * batch_size)
 
   # Display the training images in the visualizer.
-  tf.contrib.deprecated.image_summary('images', images)
+  tf.image_summary('images', images)
 
   return images, tf.reshape(label_batch, [batch_size])
 
@@ -241,6 +241,10 @@ def inputs(eval_data, data_dir, batch_size):
 
   # Subtract off the mean and divide by the variance of the pixels.
   float_image = tf.image.per_image_standardization(resized_image)
+
+  # Set the shapes of tensors.
+  float_image.set_shape([height, width, 3])
+  read_input.label.set_shape([1])
 
   # Ensure that the random shuffling has good mixing properties.
   min_fraction_of_examples_in_queue = 0.4
