@@ -28,24 +28,6 @@ from six.moves import urllib
 from tensorflow.python.platform import gfile
 import tensorflow as tf
 
-
-def variable_summaries(var, groupname, name):
-    """Attach a lot of summaries to a Tensor.
-        This is also quite expensive.
-    """
-    with tf.name_scope(None):
-        #s_var = tf.cast(var, tf.float32)
-        amean = tf.reduce_mean(tf.abs(var))
-        tf.summary.scalar(groupname + '/amean/' + name, amean)
-        #mean = tf.reduce_mean(s_var)
-        #tf.summary.scalar(groupname + '/mean/' + name, mean)
-        #stddev = tf.sqrt(tf.reduce_sum(tf.square(s_var - mean)))
-        #tf.summary.scalar(groupname + '/sttdev/' + name, stddev)
-        #tf.summary.scalar(groupname + '/max/' + name, tf.reduce_max(s_var))
-        #tf.summary.scalar(groupname + '/min/' + name, tf.reduce_min(s_var))
-        tf.summary.histogram(groupname + "/" + name, var)
-
-
 # Special vocabulary symbols - we always put them at the start.
 _PAD = b"_PAD"
 _GO = b"_GO"
@@ -132,13 +114,11 @@ def basic_tokenizer(sentence):
 def create_vocabulary(vocabulary_path, data_path, max_vocabulary_size,
                       tokenizer=None, normalize_digits=True):
   """Create vocabulary file (if it does not exist yet) from data file.
-
   Data file is assumed to contain one sentence per line. Each sentence is
   tokenized and digits are normalized (if normalize_digits is set).
   Vocabulary contains the most-frequent tokens up to max_vocabulary_size.
   We write it to vocabulary_path in a one-token-per-line format, so that later
   token in the first line gets id=0, second line gets id=1, and so on.
-
   Args:
     vocabulary_path: path where the vocabulary will be created.
     data_path: data file that will be used to create vocabulary.
@@ -174,20 +154,16 @@ def create_vocabulary(vocabulary_path, data_path, max_vocabulary_size,
 
 def initialize_vocabulary(vocabulary_path):
   """Initialize vocabulary from file.
-
   We assume the vocabulary is stored one-item-per-line, so a file:
     dog
     cat
   will result in a vocabulary {"dog": 0, "cat": 1}, and this function will
   also return the reversed-vocabulary ["dog", "cat"].
-
   Args:
     vocabulary_path: path to the file containing the vocabulary.
-
   Returns:
     a pair: the vocabulary (a dictionary mapping string to integers), and
     the reversed vocabulary (a list, which reverses the vocabulary mapping).
-
   Raises:
     ValueError: if the provided vocabulary_path does not exist.
   """
@@ -205,18 +181,15 @@ def initialize_vocabulary(vocabulary_path):
 def sentence_to_token_ids(sentence, vocabulary,
                           tokenizer=None, normalize_digits=True):
   """Convert a string to list of integers representing token-ids.
-
   For example, a sentence "I have a dog" may become tokenized into
   ["I", "have", "a", "dog"] and with vocabulary {"I": 1, "have": 2,
   "a": 4, "dog": 7"} this function will return [1, 2, 4, 7].
-
   Args:
     sentence: the sentence in bytes format to convert to token-ids.
     vocabulary: a dictionary mapping tokens to integers.
     tokenizer: a function to use to tokenize each sentence;
       if None, basic_tokenizer will be used.
     normalize_digits: Boolean; if true, all digits are replaced by 0s.
-
   Returns:
     a list of integers, the token-ids for the sentence.
   """
@@ -234,11 +207,9 @@ def sentence_to_token_ids(sentence, vocabulary,
 def data_to_token_ids(data_path, target_path, vocabulary_path,
                       tokenizer=None, normalize_digits=True):
   """Tokenize data file and turn into token-ids using given vocabulary file.
-
   This function loads data line-by-line from data_path, calls the above
   sentence_to_token_ids, and saves the result to target_path. See comment
   for sentence_to_token_ids on the details of token-ids format.
-
   Args:
     data_path: path to the data file in one-sentence-per-line format.
     target_path: path where the file with token-ids will be created.
@@ -264,14 +235,12 @@ def data_to_token_ids(data_path, target_path, vocabulary_path,
 
 def prepare_wmt_data(data_dir, en_vocabulary_size, fr_vocabulary_size, tokenizer=None):
   """Get WMT data into data_dir, create vocabularies and tokenize data.
-
   Args:
     data_dir: directory in which the data sets will be stored.
     en_vocabulary_size: size of the English vocabulary to create and use.
     fr_vocabulary_size: size of the French vocabulary to create and use.
     tokenizer: a function to use to tokenize each data sentence;
       if None, basic_tokenizer will be used.
-
   Returns:
     A tuple of 6 elements:
       (1) path to the token-ids for English training data-set,
@@ -296,7 +265,6 @@ def prepare_wmt_data(data_dir, en_vocabulary_size, fr_vocabulary_size, tokenizer
 def prepare_data(data_dir, from_train_path, to_train_path, from_dev_path, to_dev_path, from_vocabulary_size,
                  to_vocabulary_size, tokenizer=None):
   """Preapre all necessary files that are required for the training.
-
     Args:
       data_dir: directory in which the data sets will be stored.
       from_train_path: path to the file that includes "from" training samples.
@@ -307,7 +275,6 @@ def prepare_data(data_dir, from_train_path, to_train_path, from_dev_path, to_dev
       to_vocabulary_size: size of the "to language" vocabulary to create and use.
       tokenizer: a function to use to tokenize each data sentence;
         if None, basic_tokenizer will be used.
-
     Returns:
       A tuple of 6 elements:
         (1) path to the token-ids for "from language" training data-set,
@@ -330,11 +297,11 @@ def prepare_data(data_dir, from_train_path, to_train_path, from_dev_path, to_dev
   data_to_token_ids(from_train_path, from_train_ids_path, from_vocab_path, tokenizer)
 
   # Create token ids for the development data.
-  fr_dev_ids_path = dev_path + (".ids%d.fr" % fr_vocabulary_size)
-  en_dev_ids_path = dev_path + (".ids%d.en" % en_vocabulary_size)
-  data_to_token_ids(dev_path + ".fr", fr_dev_ids_path, fr_vocab_path, tokenizer)
-  data_to_token_ids(dev_path + ".en", en_dev_ids_path, en_vocab_path, tokenizer)
+  to_dev_ids_path = to_dev_path + (".ids%d" % to_vocabulary_size)
+  from_dev_ids_path = from_dev_path + (".ids%d" % from_vocabulary_size)
+  data_to_token_ids(to_dev_path, to_dev_ids_path, to_vocab_path, tokenizer)
+  data_to_token_ids(from_dev_path, from_dev_ids_path, from_vocab_path, tokenizer)
 
-  return (en_train_ids_path, fr_train_ids_path,
-          en_dev_ids_path, fr_dev_ids_path,
-          en_vocab_path, fr_vocab_path)
+  return (from_train_ids_path, to_train_ids_path,
+          from_dev_ids_path, to_dev_ids_path,
+          from_vocab_path, to_vocab_path)
