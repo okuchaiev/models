@@ -257,8 +257,8 @@ def data_to_token_ids(data_path, target_path, vocabulary_path,
           counter += 1
           if counter % 100000 == 0:
             print("  tokenizing line %d" % counter)
-          token_ids = sentence_to_token_ids(line, vocab, tokenizer,
-                                            normalize_digits)
+          token_ids = sentence_to_token_ids(tf.compat.as_bytes(line), vocab,
+                                            tokenizer, normalize_digits)
           tokens_file.write(" ".join([str(tok) for tok in token_ids]) + "\n")
 
 
@@ -318,8 +318,8 @@ def prepare_data(data_dir, from_train_path, to_train_path, from_dev_path, to_dev
         (6) path to the "to language" vocabulary file.
     """
   # Create vocabularies of the appropriate sizes.
-  to_vocab_path = os.path.join(data_dir, "vocab%d" % to_vocabulary_size)
-  from_vocab_path = os.path.join(data_dir, "vocab%d" % from_vocabulary_size)
+  to_vocab_path = os.path.join(data_dir, "vocab%d.to" % to_vocabulary_size)
+  from_vocab_path = os.path.join(data_dir, "vocab%d.from" % from_vocabulary_size)
   create_vocabulary(to_vocab_path, to_train_path , to_vocabulary_size, tokenizer)
   create_vocabulary(from_vocab_path, from_train_path , from_vocabulary_size, tokenizer)
 
